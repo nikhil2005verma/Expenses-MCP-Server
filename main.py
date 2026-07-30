@@ -31,17 +31,25 @@ mcp = FastMCP("ExpenseTracker")
 
 
 def get_connection():
-    return mysql.connector.connect(**DB_CONFIG)
+    try:
+        return mysql.connector.connect(**DB_CONFIG)
+    except mysql.connector.Error as exc:
+        print(f"MySQL connection failed: {exc}")
+        return None
 
 
 def init_db():
-    init_conn = mysql.connector.connect(
-        host=DB_CONFIG["host"],
-        port=DB_CONFIG["port"],
-        user=DB_CONFIG["user"],
-        password=DB_CONFIG["password"],
-        autocommit=True,
-    )
+    try:
+        init_conn = mysql.connector.connect(
+            host=DB_CONFIG["host"],
+            port=DB_CONFIG["port"],
+            user=DB_CONFIG["user"],
+            password=DB_CONFIG["password"],
+            autocommit=True,
+        )
+    except mysql.connector.Error as exc:
+        print(f"MySQL init failed: {exc}")
+        return
 
     try:
         with init_conn.cursor() as cursor:
@@ -50,6 +58,9 @@ def init_db():
         init_conn.close()
 
     conn = get_connection()
+    if conn is None:
+        return
+
     try:
         with conn.cursor() as cursor:
             cursor.execute(
@@ -76,6 +87,9 @@ async def initialize_app():
 def add_expense(date, amount, category, subcategory="", note=""):
     """Add a new expense entry to the database."""
     conn = get_connection()
+    if conn is None:
+        return {"status": "error", "message": "MySQL connection is unavailable"}
+
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -91,6 +105,9 @@ def add_expense(date, amount, category, subcategory="", note=""):
 def list_expenses(start_date, end_date):
     """List expense entries within an inclusive date range."""
     conn = get_connection()
+    if conn is None:
+        return {"status": "error", "message": "MySQL connection is unavailable"}
+
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -112,6 +129,9 @@ def list_expenses(start_date, end_date):
 def summarize(start_date, end_date, category=None):
     """Summarize expenses by category within an inclusive date range."""
     conn = get_connection()
+    if conn is None:
+        return {"status": "error", "message": "MySQL connection is unavailable"}
+
     try:
         with conn.cursor() as cur:
             query = """
@@ -141,6 +161,9 @@ def update_expense(expense_id, date=None, amount=None, category=None, subcategor
         return {"status": "error", "message": "No fields provided to update"}
 
     conn = get_connection()
+    if conn is None:
+        return {"status": "error", "message": "MySQL connection is unavailable"}
+
     try:
         with conn.cursor() as cur:
             fields = []
@@ -173,6 +196,9 @@ def update_expense(expense_id, date=None, amount=None, category=None, subcategor
 def delete_expense(expense_id):
     """Delete an expense entry by id."""
     conn = get_connection()
+    if conn is None:
+        return {"status": "error", "message": "MySQL connection is unavailable"}
+
     try:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM expenses WHERE id = %s", (expense_id,))
