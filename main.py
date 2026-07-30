@@ -8,12 +8,22 @@ from dotenv import load_dotenv
 load_dotenv()
 
 CATEGORIES_PATH = os.path.join(os.path.dirname(__file__), "categories.json")
+
+
+def _get_env(*names, default=None):
+    for name in names:
+        value = os.getenv(name)
+        if value not in (None, ""):
+            return value
+    return default
+
+
 DB_CONFIG = {
-    "host": os.getenv("MYSQL_HOST", "localhost"),
-    "port": int(os.getenv("MYSQL_PORT", "3306")),
-    "user": os.getenv("MYSQL_USER", "root"),
-    "password": os.getenv("MYSQL_PASSWORD", ""),
-    "database": os.getenv("MYSQL_DATABASE", "expenses_db"),
+    "host": _get_env("MYSQL_HOST", "MYSQLHOST", default="localhost"),
+    "port": int(_get_env("MYSQL_PORT", "MYSQLPORT", default="3306")),
+    "user": _get_env("MYSQL_USER", "MYSQLUSER", default="root"),
+    "password": _get_env("MYSQL_PASSWORD", "MYSQLPASSWORD", default=""),
+    "database": _get_env("MYSQL_DATABASE", "MYSQLDATABASE", default="expenses_db"),
     "autocommit": True,
 }
 
@@ -180,4 +190,4 @@ def categories():
 
 if __name__ == "__main__":
     asyncio.run(initialize_app())
-    mcp.run(transport="http", host="0.0.0.0", port=8000)
+    mcp.run(transport="http", host="0.0.0.0", port=int(os.getenv("PORT", "8000")))
