@@ -1,5 +1,5 @@
 [project]
-name = "mcp"
+name = "Expenses"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -7,8 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "cyclopts>=4.22.2",
     "dotenv>=0.9.9",
-    "fastmcp>=2.3.0rc1",
+    "fastmcp>=3.4.5",
     "mysql-connector-python>=8.0.0",
     "python-dotenv>=1.0.0",
-    "streamlit>=1.35.0",
 ]
