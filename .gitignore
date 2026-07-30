@@ -10,6 +10,7 @@ wheels/
 .venv
 login_signip.py
 fast_api.py
+.env
 
 
 
