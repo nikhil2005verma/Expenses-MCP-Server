@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import os
 
 from fastmcp import FastMCP
@@ -38,6 +39,37 @@ def get_connection():
         return None
 
 
+def _hash_password(password):
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
+def _get_user_by_username(username):
+    conn = get_connection()
+    if conn is None:
+        return None
+
+    try:
+        with conn.cursor(dictionary=True) as cur:
+            cur.execute(
+                "SELECT id, username, password_hash FROM users WHERE username = %s",
+                (username,),
+            )
+            return cur.fetchone()
+    finally:
+        conn.close()
+
+
+def _authenticate_user(username, password):
+    user = _get_user_by_username(username)
+    if not user:
+        return None
+
+    if user["password_hash"] != _hash_password(password):
+        return None
+
+    return user
+
+
 def init_db():
     try:
         init_conn = mysql.connector.connect(
@@ -65,16 +97,31 @@ def init_db():
         with conn.cursor() as cursor:
             cursor.execute(
                 """
+                CREATE TABLE IF NOT EXISTS users(
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    username VARCHAR(100) UNIQUE NOT NULL,
+                    email VARCHAR(255) NOT NULL DEFAULT '',
+                    password_hash VARCHAR(255) NOT NULL
+                )
+                """
+            )
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS expenses(
                     id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT DEFAULT NULL,
                     date VARCHAR(20) NOT NULL,
                     amount DOUBLE NOT NULL,
                     category VARCHAR(255) NOT NULL,
                     subcategory VARCHAR(255) DEFAULT '',
-                    note TEXT
+                    note TEXT,
+                    CONSTRAINT fk_expenses_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                 )
                 """
             )
+            cursor.execute("SHOW COLUMNS FROM expenses LIKE 'user_id'")
+            if cursor.fetchone() is None:
+                cursor.execute("ALTER TABLE expenses ADD COLUMN user_id INT DEFAULT NULL")
     finally:
         conn.close()
 
@@ -84,8 +131,46 @@ async def initialize_app():
 
 
 @mcp.tool()
-def add_expense(date, amount, category, subcategory="", note=""):
-    """Add a new expense entry to the database."""
+def register_user(username, password, email=""):
+    """Create a new user account for the expense tracker."""
+    if not username or not password:
+        return {"status": "error", "message": "Username and password are required"}
+
+    conn = get_connection()
+    if conn is None:
+        return {"status": "error", "message": "MySQL connection is unavailable"}
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+            if cur.fetchone():
+                return {"status": "error", "message": "Username already exists"}
+
+            cur.execute(
+                "INSERT INTO users(username, email, password_hash) VALUES (%s, %s, %s)",
+                (username, email, _hash_password(password)),
+            )
+            return {"status": "ok", "user_id": cur.lastrowid, "username": username}
+    finally:
+        conn.close()
+
+
+@mcp.tool()
+def login_user(username, password):
+    """Authenticate a user and return their user id."""
+    user = _authenticate_user(username, password)
+    if not user:
+        return {"status": "error", "message": "Invalid username or password"}
+
+    return {"status": "ok", "user_id": user["id"], "username": user["username"]}
+
+
+@mcp.tool()
+def add_expense(user_id, date, amount, category, subcategory="", note=""):
+    """Add a new expense entry for the authenticated user."""
+    if not user_id:
+        return {"status": "error", "message": "A valid user_id is required"}
+
     conn = get_connection()
     if conn is None:
         return {"status": "error", "message": "MySQL connection is unavailable"}
@@ -93,8 +178,8 @@ def add_expense(date, amount, category, subcategory="", note=""):
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO expenses(date, amount, category, subcategory, note) VALUES (%s, %s, %s, %s, %s)",
-                (date, amount, category, subcategory, note),
+                "INSERT INTO expenses(user_id, date, amount, category, subcategory, note) VALUES (%s, %s, %s, %s, %s, %s)",
+                (user_id, date, amount, category, subcategory, note),
             )
             return {"status": "ok", "id": cur.lastrowid}
     finally:
@@ -102,8 +187,8 @@ def add_expense(date, amount, category, subcategory="", note=""):
 
 
 @mcp.tool()
-def list_expenses(start_date, end_date):
-    """List expense entries within an inclusive date range."""
+def list_expenses(user_id, start_date, end_date):
+    """List expense entries for a specific user within an inclusive date range."""
     conn = get_connection()
     if conn is None:
         return {"status": "error", "message": "MySQL connection is unavailable"}
@@ -114,10 +199,10 @@ def list_expenses(start_date, end_date):
                 """
                 SELECT id, date, amount, category, subcategory, note
                 FROM expenses
-                WHERE date BETWEEN %s AND %s
+                WHERE user_id = %s AND date BETWEEN %s AND %s
                 ORDER BY id ASC
                 """,
-                (start_date, end_date),
+                (user_id, start_date, end_date),
             )
             cols = [d[0] for d in cur.description]
             return [dict(zip(cols, r)) for r in cur.fetchall()]
@@ -126,8 +211,8 @@ def list_expenses(start_date, end_date):
 
 
 @mcp.tool()
-def summarize(start_date, end_date, category=None):
-    """Summarize expenses by category within an inclusive date range."""
+def summarize(user_id, start_date, end_date, category=None):
+    """Summarize expenses for a specific user within an inclusive date range."""
     conn = get_connection()
     if conn is None:
         return {"status": "error", "message": "MySQL connection is unavailable"}
@@ -137,9 +222,9 @@ def summarize(start_date, end_date, category=None):
             query = """
                 SELECT category, SUM(amount) AS total_amount
                 FROM expenses
-                WHERE date BETWEEN %s AND %s
+                WHERE user_id = %s AND date BETWEEN %s AND %s
             """
-            params = [start_date, end_date]
+            params = [user_id, start_date, end_date]
 
             if category:
                 query += " AND category = %s"
@@ -155,8 +240,8 @@ def summarize(start_date, end_date, category=None):
 
 
 @mcp.tool()
-def update_expense(expense_id, date=None, amount=None, category=None, subcategory=None, note=None):
-    """Update an existing expense entry by id."""
+def update_expense(user_id, expense_id, date=None, amount=None, category=None, subcategory=None, note=None):
+    """Update an existing expense entry for the authenticated user."""
     if not any(value is not None for value in [date, amount, category, subcategory, note]):
         return {"status": "error", "message": "No fields provided to update"}
 
@@ -185,23 +270,26 @@ def update_expense(expense_id, date=None, amount=None, category=None, subcategor
                 fields.append("note = %s")
                 values.append(note)
 
-            values.append(expense_id)
-            cur.execute(f"UPDATE expenses SET {', '.join(fields)} WHERE id = %s", values)
+            values.extend([expense_id, user_id])
+            cur.execute(
+                f"UPDATE expenses SET {', '.join(fields)} WHERE id = %s AND user_id = %s",
+                values,
+            )
             return {"status": "ok", "updated_rows": cur.rowcount}
     finally:
         conn.close()
 
 
 @mcp.tool()
-def delete_expense(expense_id):
-    """Delete an expense entry by id."""
+def delete_expense(user_id, expense_id):
+    """Delete an expense entry for the authenticated user."""
     conn = get_connection()
     if conn is None:
         return {"status": "error", "message": "MySQL connection is unavailable"}
 
     try:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM expenses WHERE id = %s", (expense_id,))
+            cur.execute("DELETE FROM expenses WHERE id = %s AND user_id = %s", (expense_id, user_id))
             return {"status": "ok", "deleted_rows": cur.rowcount}
     finally:
         conn.close()
