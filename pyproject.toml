@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "bcrypt<4.1",
     "cyclopts>=4.22.2",
     "dotenv>=0.9.9",
     "fastapi>=0.141.1",
@@ -14,4 +15,5 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "python-jose>=3.5.0",
     "python-multipart>=0.0.32",
+    "requests>=2.34.2",
 ]

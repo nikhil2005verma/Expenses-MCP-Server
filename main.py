@@ -42,8 +42,27 @@ DB_CONFIG = {
 
 mcp = FastMCP("ExpenseTracker")
 app = FastAPI(title="Expense Tracker MCP Auth")
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto",
+    bcrypt__truncate_error=False,
+)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
+
+
+def _normalize_password(password):
+    if password is None:
+        return ""
+
+    if isinstance(password, bytes):
+        password = password.decode("utf-8", errors="ignore")
+
+    password = str(password).strip()
+    password_bytes = password.encode("utf-8")
+    if len(password_bytes) > 72:
+        password = password_bytes[:72].decode("utf-8", errors="ignore")
+    return password
 
 
 def get_connection():
@@ -55,17 +74,20 @@ def get_connection():
 
 
 def _hash_password(password):
-    return pwd_context.hash(password)
+    normalized_password = _normalize_password(password)
+    return pwd_context.hash(normalized_password)
 
 
 def _verify_password(plain_password, hashed_password):
     if not hashed_password:
         return False
 
-    if hashed_password.startswith("$2"):
-        return pwd_context.verify(plain_password, hashed_password)
+    normalized_password = _normalize_password(plain_password)
 
-    return hashlib.sha256(plain_password.encode("utf-8")).hexdigest() == hashed_password
+    if hashed_password.startswith("$2"):
+        return pwd_context.verify(normalized_password, hashed_password)
+
+    return hashlib.sha256(normalized_password.encode("utf-8")).hexdigest() == hashed_password
 
 
 def _get_user_by_username(username):
@@ -194,10 +216,11 @@ def init_db():
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     username VARCHAR(100) UNIQUE NOT NULL,
                     email VARCHAR(255) NOT NULL DEFAULT '',
-                    password_hash VARCHAR(255) NOT NULL
+                    password_hash VARCHAR(512) NOT NULL
                 )
                 """
             )
+            cursor.execute("ALTER TABLE users MODIFY COLUMN password_hash VARCHAR(512) NOT NULL")
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS expenses(
@@ -242,6 +265,7 @@ def register_user(username, password, email=""):
             cur.execute(
                 "INSERT INTO users(username, email, password_hash) VALUES (%s, %s, %s)",
                 (username, email, _hash_password(password)),
+                # (username, email, password),
             )
             return {"status": "ok", "user_id": cur.lastrowid, "username": username}
     finally:
