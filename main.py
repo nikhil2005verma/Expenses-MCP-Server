@@ -2,11 +2,15 @@ import asyncio
 import hashlib
 import os
 from datetime import datetime, timedelta, timezone
+from typing import Annotated
 
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastmcp import FastMCP
 import mysql.connector
 from dotenv import load_dotenv
 from jose import JWTError, jwt
+from passlib.context import CryptContext
 
 load_dotenv()
 
@@ -37,6 +41,9 @@ DB_CONFIG = {
 }
 
 mcp = FastMCP("ExpenseTracker")
+app = FastAPI(title="Expense Tracker MCP Auth")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 
 
 def get_connection():
@@ -48,7 +55,17 @@ def get_connection():
 
 
 def _hash_password(password):
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+    return pwd_context.hash(password)
+
+
+def _verify_password(plain_password, hashed_password):
+    if not hashed_password:
+        return False
+
+    if hashed_password.startswith("$2"):
+        return pwd_context.verify(plain_password, hashed_password)
+
+    return hashlib.sha256(plain_password.encode("utf-8")).hexdigest() == hashed_password
 
 
 def _get_user_by_username(username):
@@ -72,7 +89,7 @@ def _authenticate_user(username, password):
     if not user:
         return None
 
-    if user["password_hash"] != _hash_password(password):
+    if not _verify_password(password, user["password_hash"]):
         return None
 
     return user
@@ -108,6 +125,42 @@ def get_authenticated_user_id(token: str):
     return user_id
 
 
+# CHANGE 130 TO 163
+
+def get_current_user_from_token(token: Annotated[str, Depends(oauth2_scheme)]):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        payload = verify_token(token)
+    except ValueError as exc:
+        raise credentials_exception from exc
+
+    username = payload.get("sub")
+    user_id = payload.get("user_id")
+    if not username or not user_id:
+        raise credentials_exception
+
+    return {"user_id": user_id, "username": username}
+
+
+@app.post("/token")
+@app.post("/login")
+def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = _authenticate_user(form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
+
+    token = create_token({"sub": user["username"], "user_id": user["id"]})
+    return {"access_token": token, "token_type": "bearer"}
+
+
+@app.get("/me")
+def read_current_user(user=Depends(get_current_user_from_token)):
+    return user
 
 
 def init_db():
