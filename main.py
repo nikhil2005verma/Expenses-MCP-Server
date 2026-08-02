@@ -1,14 +1,22 @@
 import asyncio
 import hashlib
 import os
+from datetime import datetime, timedelta, timezone
 
 from fastmcp import FastMCP
 import mysql.connector
 from dotenv import load_dotenv
+from jose import JWTError, jwt
 
 load_dotenv()
 
+# JWT Secrte Key and algoeithm and expire time 
 CATEGORIES_PATH = os.path.join(os.path.dirname(__file__), "categories.json")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "mysecret")
+ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "30"))
+
+
 
 
 def _get_env(*names, default=None):
@@ -68,6 +76,38 @@ def _authenticate_user(username, password):
         return None
 
     return user
+
+
+# JWT Crete Token 
+def create_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+# Verify Token 
+def verify_token(token: str):
+    try:
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError as exc:
+        raise ValueError("Invalid or expired token") from exc
+
+
+# get_authenticated_user_id
+
+def get_authenticated_user_id(token: str):
+    if not token:
+        raise ValueError("Authentication token is required")
+
+    payload = verify_token(token)
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise ValueError("Token does not contain a valid user_id")
+
+    return user_id
+
+
 
 
 def init_db():
@@ -157,19 +197,28 @@ def register_user(username, password, email=""):
 
 @mcp.tool()
 def login_user(username, password):
-    """Authenticate a user and return their user id."""
+    """Authenticate a user and return a JWT token."""
     user = _authenticate_user(username, password)
     if not user:
         return {"status": "error", "message": "Invalid username or password"}
 
-    return {"status": "ok", "user_id": user["id"], "username": user["username"]}
+    token = create_token({"sub": user["username"], "user_id": user["id"]})
+    return {
+        "status": "ok",
+        "access_token": token,
+        "token_type": "bearer",
+        "user_id": user["id"],
+        "username": user["username"],
+    }
 
 
 @mcp.tool()
-def add_expense(user_id, date, amount, category, subcategory="", note=""):
+def add_expense(token, date, amount, category, subcategory="", note=""):
     """Add a new expense entry for the authenticated user."""
-    if not user_id:
-        return {"status": "error", "message": "A valid user_id is required"}
+    try:
+        user_id = get_authenticated_user_id(token)
+    except ValueError as exc:
+        return {"status": "error", "message": str(exc)}
 
     conn = get_connection()
     if conn is None:
@@ -187,8 +236,13 @@ def add_expense(user_id, date, amount, category, subcategory="", note=""):
 
 
 @mcp.tool()
-def list_expenses(user_id, start_date, end_date):
-    """List expense entries for a specific user within an inclusive date range."""
+def list_expenses(token, start_date, end_date):
+    """List expense entries for the authenticated user within an inclusive date range."""
+    try:
+        user_id = get_authenticated_user_id(token)
+    except ValueError as exc:
+        return {"status": "error", "message": str(exc)}
+
     conn = get_connection()
     if conn is None:
         return {"status": "error", "message": "MySQL connection is unavailable"}
@@ -211,8 +265,13 @@ def list_expenses(user_id, start_date, end_date):
 
 
 @mcp.tool()
-def summarize(user_id, start_date, end_date, category=None):
-    """Summarize expenses for a specific user within an inclusive date range."""
+def summarize(token, start_date, end_date, category=None):
+    """Summarize expenses for the authenticated user within an inclusive date range."""
+    try:
+        user_id = get_authenticated_user_id(token)
+    except ValueError as exc:
+        return {"status": "error", "message": str(exc)}
+
     conn = get_connection()
     if conn is None:
         return {"status": "error", "message": "MySQL connection is unavailable"}
@@ -240,8 +299,13 @@ def summarize(user_id, start_date, end_date, category=None):
 
 
 @mcp.tool()
-def update_expense(user_id, expense_id, date=None, amount=None, category=None, subcategory=None, note=None):
+def update_expense(token, expense_id, date=None, amount=None, category=None, subcategory=None, note=None):
     """Update an existing expense entry for the authenticated user."""
+    try:
+        user_id = get_authenticated_user_id(token)
+    except ValueError as exc:
+        return {"status": "error", "message": str(exc)}
+
     if not any(value is not None for value in [date, amount, category, subcategory, note]):
         return {"status": "error", "message": "No fields provided to update"}
 
@@ -281,8 +345,13 @@ def update_expense(user_id, expense_id, date=None, amount=None, category=None, s
 
 
 @mcp.tool()
-def delete_expense(user_id, expense_id):
+def delete_expense(token, expense_id):
     """Delete an expense entry for the authenticated user."""
+    try:
+        user_id = get_authenticated_user_id(token)
+    except ValueError as exc:
+        return {"status": "error", "message": str(exc)}
+
     conn = get_connection()
     if conn is None:
         return {"status": "error", "message": "MySQL connection is unavailable"}
