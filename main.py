@@ -44,25 +44,33 @@ mcp = FastMCP("ExpenseTracker")
 app = FastAPI(title="Expense Tracker MCP Auth")
 # pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 pwd_context = CryptContext(
-    schemes=["bcrypt"],
+    schemes=["pbkdf2_sha256","bcrypt"],
     deprecated="auto",
     bcrypt__truncate_error=False,
 )
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 
 
+# def _normalize_password(password):
+#     if password is None:
+#         return ""
+
+#     if isinstance(password, bytes):
+#         password = password.decode("utf-8", errors="ignore")
+
+#     password = str(password).strip()
+#     password_bytes = password.encode("utf-8")
+#     if len(password_bytes) > 72:
+#         password = password_bytes[:72].decode("utf-8", errors="ignore")
+#     return password
+
+
 def _normalize_password(password):
     if password is None:
         return ""
-
     if isinstance(password, bytes):
         password = password.decode("utf-8", errors="ignore")
-
-    password = str(password).strip()
-    password_bytes = password.encode("utf-8")
-    if len(password_bytes) > 72:
-        password = password_bytes[:72].decode("utf-8", errors="ignore")
-    return password
+    return str(password).strip()
 
 
 def get_connection():
@@ -84,7 +92,7 @@ def _verify_password(plain_password, hashed_password):
 
     normalized_password = _normalize_password(plain_password)
 
-    if hashed_password.startswith("$2"):
+    if hashed_password.startswith(("$2", "$pbkdf2")):
         return pwd_context.verify(normalized_password, hashed_password)
 
     return hashlib.sha256(normalized_password.encode("utf-8")).hexdigest() == hashed_password
