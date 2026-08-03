@@ -1,142 +1,250 @@
-# Expense Tracker Server
+# Expenses MCP Server
 
-This project is an expense tracking backend built with FastAPI, JWT authentication, OAuth2-style password flow, and FastMCP tools.
+A production-ready **Model Context Protocol (MCP)** server that enables AI assistants to securely manage personal expenses through natural language. The server uses **Auth0 OAuth 2.0**, **JWT authentication**, **FastMCP**, and **MySQL** to provide secure, user-specific expense management for MCP-compatible clients such as Claude Desktop.
 
-## What this project does
+---
 
-The server lets you:
-- register a user account
-- log in securely
-- receive a JWT access token
-- access protected expense APIs
-- add, view, update, and delete expenses
-- summarize expenses by category
+## Overview
 
-## Main files
+Expenses MCP Server exposes a collection of MCP tools that allow AI assistants to perform expense management operations on behalf of authenticated users. Each request is authorized using JWT tokens issued by Auth0, ensuring that users can only access their own financial data.
 
-- [main.py](main.py) - main FastAPI + FastMCP server with auth and expense tools
-- [main2.py](main2.py) - alternate server entrypoint with the same auth and expense logic
-- [categories.json](categories.json) - default expense categories
-- [requirements.txt](requirements.txt) - Python dependencies
-- [pyproject.toml](pyproject.toml) - project metadata and dependency list
+This project demonstrates how to build a secure, remote MCP server following modern authentication and backend development practices.
 
-## Requirements
+---
 
-- Python 3.11+
-- MySQL server
-- A virtual environment is recommended
+## Features
 
-### Setup
+- Secure user authentication with Auth0 OAuth 2.0
+- JWT-based authorization
+- User registration and login
+- Add new expenses
+- View expense history
+- Update existing expenses
+- Delete expenses
+- Expense categorization
+- MySQL database integration
+- Remote MCP server deployment
+- Compatible with Claude Desktop and other MCP clients
+- Environment-based configuration
+- Production-ready architecture
+
+---
+
+## Tech Stack
+
+| Technology | Purpose |
+|------------|---------|
+| Python | Backend Development |
+| FastMCP | MCP Server Framework |
+| FastAPI | HTTP Server |
+| Auth0 | Authentication Provider |
+| JWT | Authorization |
+| MySQL | Database |
+| Uvicorn | ASGI Server |
+| python-dotenv | Environment Management |
+
+---
+
+## Architecture
+
+```
+                ┌────────────────────────────┐
+                │      MCP Client            │
+                │ (Claude Desktop, etc.)     │
+                └─────────────┬──────────────┘
+                              │
+                       OAuth Authentication
+                              │
+                              ▼
+                     Auth0 Authorization
+                              │
+                     JWT Access Token
+                              │
+                              ▼
+                 Expenses MCP Server (FastMCP)
+                              │
+                 JWT Verification Middleware
+                              │
+                    Business Logic & Tools
+                              │
+                              ▼
+                        MySQL Database
+```
+
+---
+
+## Project Structure
+
+```
+Expenses-MCP-Server/
+│
+├── main.py
+├── auth.py
+├── database.py
+├── categories.json
+├── requirements.txt
+├── .env
+├── README.md
+```
+
+---
+
+## Installation
+
+### Clone the repository
 
 ```bash
-python3 -m venv .venv
+git clone https://github.com/nikhil2005verma/Expenses-MCP-Server.git
+cd Expenses-MCP-Server
+```
+
+### Create a virtual environment
+
+```bash
+python -m venv .venv
+```
+
+### Activate the environment
+
+**Windows**
+
+```bash
+.venv\Scripts\activate
+```
+
+**Linux/macOS**
+
+```bash
 source .venv/bin/activate
+```
+
+### Install dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-## Environment variables
+---
 
-Set these before starting the server:
+## Environment Variables
+
+Create a `.env` file and configure the following variables.
+
+```env
+DB_HOST=
+DB_PORT=
+DB_USER=
+DB_PASSWORD=
+DB_NAME=
+
+AUTH0_DOMAIN=
+AUTH0_AUDIENCE=
+AUTH0_CLIENT_ID=
+AUTH0_CLIENT_SECRET=
+AUTH0_ISSUER=
+
+JWT_SECRET=
+```
+
+---
+
+## Running the Server
 
 ```bash
-export MYSQL_HOST=localhost
-export MYSQL_PORT=3306
-export MYSQL_USER=root
-export MYSQL_PASSWORD=""
-export MYSQL_DATABASE=expenses_db
-export JWT_SECRET_KEY="your-secret"
-export JWT_ALGORITHM=HS256
-export JWT_EXPIRE_MINUTES=30
-export PORT=8000
+python main.py
 ```
 
-The app will create the database and required tables automatically if they do not exist.
-
-## Run the server
+or
 
 ```bash
-./.venv/bin/python main.py
+uvicorn main:app --reload
 ```
 
-The server starts on port 8000 by default and listens on `0.0.0.0`.
+---
 
-## Authentication flow
+## Available MCP Tools
 
-### Login
+| Tool | Description |
+|------|-------------|
+| register_user | Register a new user |
+| login_user | Authenticate a user |
+| add_expense | Add a new expense |
+| get_expenses | Retrieve user expenses |
+| update_expense | Update an expense |
+| delete_expense | Delete an expense |
+| expense_summary | Generate an expense summary |
 
-Send a request to:
+---
 
-```bash
-POST /token
-```
+## Authentication Flow
 
-Use form data:
+1. User authenticates through Auth0.
+2. Auth0 issues a JWT access token.
+3. The MCP client includes the token with each request.
+4. The server validates the JWT.
+5. User identity is extracted from the token.
+6. Only the authenticated user's data is accessed.
 
-```text
-username=your_username
-password=your_password
-```
+---
 
-Example response:
+## Security Features
 
-```json
-{
-  "access_token": "<jwt-token>",
-  "token_type": "bearer"
-}
-```
+- OAuth 2.0 Authentication
+- JWT Access Token Validation
+- User-specific Data Isolation
+- Protected MCP Tools
+- Environment Variable Configuration
+- Secure Database Integration
 
-### Protected route
+---
 
-Use the token in the Authorization header:
+## Deployment
 
-```text
-Authorization: Bearer <access_token>
-```
+The project can be deployed to any platform that supports Python ASGI applications, including:
 
-The `/me` route returns the authenticated user info for the current token.
+- Railway
+- Render
+- Fly.io
+- Docker
+- VPS
+- FastMCP Cloud
 
-## MCP tools
+---
 
-The server also exposes MCP tools such as:
+## Future Enhancements
 
-- `register_user(username, password, email="")`
-- `login_user(username, password)`
-- `add_expense(token, date, amount, category, subcategory="", note="")`
-- `list_expenses(token, start_date, end_date)`
-- `summarize(token, start_date, end_date, category=None)`
-- `update_expense(token, expense_id, ...)`
-- `delete_expense(token, expense_id)`
+- Budget management
+- Monthly analytics
+- Spending insights
+- CSV export
+- PDF reports
+- Multi-currency support
+- Recurring expenses
+- Email notifications
+- AI-powered financial recommendations
 
-## Example usage
+---
 
-### Register user
+## Contributing
 
-```bash
-curl -X POST "http://localhost:8000/register_user" \
-  -H "Content-Type: application/json" \
-  -d '{"username":"demo","password":"Demo@123","email":"demo@example.com"}'
-```
+Contributions are welcome.
 
-### Login
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to your branch
+5. Open a Pull Request
 
-```bash
-curl -X POST "http://localhost:8000/token" \
-  -d "username=demo&password=Demo@123"
-```
+---
 
-### Add expense
+## Author
 
-```bash
-curl -X POST "http://localhost:8000/add_expense" \
-  -H "Authorization: Bearer <token>" \
-  -d "date=2026-08-02&amount=250&category=Food"
-```
+**Nikhil Verma**
 
-## Password handling note
+- GitHub: https://github.com/nikhil2005verma
 
-Passwords are normalized before hashing and stored in the `users.password_hash` column. The schema is widened to `VARCHAR(512)` so bcrypt hashes can be stored safely without truncation issues.
+---
 
-## Summary
+## Acknowledgements
 
-This project combines FastAPI, JWT, FastMCP tools, and MySQL to build a secure expense tracking backend.
+Special thanks to the teams behind **FastMCP**, **FastAPI**, **Auth0**, and the **Model Context Protocol (MCP)** ecosystem for providing the tools and standards that made this project possible.
